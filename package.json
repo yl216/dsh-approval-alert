@@ -1,13 +1,13 @@
 {
   "name": "dsh-approval-alert",
-  "version": "0.1.0",
-  "description": "DSH 审批/提问提醒:DSH 有焦点时只响提示音,焦点不在 DSH 时额外在屏幕右下角弹出系统通知;声音类别、音量、重复次数与自定义音效均可配置 · Per-approval reminder for DeepSeek Harness with customizable sound and an out-of-focus system notification.",
+  "version": "0.2.0",
+  "description": "DSH 审批/提问提醒:提示音 + 右下角浮层,点「去处理」直接跳到发起审批的会话;音效、音量、重复次数与自定义音效均可配置 · Sound + jump-back reminder for DeepSeek Harness pending approvals.",
   "keywords": [
     "dsh",
     "dsh-plugin",
     "deepseek-harness",
     "approval",
-    "notification",
+    "reminder",
     "sound",
     "alert",
     "cui"
