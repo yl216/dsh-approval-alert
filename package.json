@@ -1,7 +1,7 @@
 {
   "name": "dsh-approval-alert",
-  "version": "0.2.0",
-  "description": "DSH 审批/提问提醒:提示音 + 右下角浮层,点「去处理」直接跳到发起审批的会话;音效、音量、重复次数与自定义音效均可配置 · Sound + jump-back reminder for DeepSeek Harness pending approvals.",
+  "version": "0.3.0",
+  "description": "DSH 审批/提问提醒:提示音 + 右下角浮层,窗口在后台时再补一条系统通知;点「去处理」或点通知都直接跳到发起审批的会话。音效、音量、重复次数与自定义音效均可配置。",
   "keywords": [
     "dsh",
     "dsh-plugin",

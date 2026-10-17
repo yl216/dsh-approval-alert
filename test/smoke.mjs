@@ -5,17 +5,20 @@
  * window / document / AudioContext 验证真实行为:
  *
  *   1. 模块形状与两个槽位注册
- *   2. 审批出现 → 提示音 + 右下角浮层,且完全不碰系统通知(交给 DSH 自己)
- *   3. 同一请求不重复提醒;请求被回答后收起
- *   4. 重复提醒(间隔到点再响一次)
- *   5. 「去处理」跳到审批所属会话(uiWorkspace.openSession)
- *   6. 宿主没有 uiWorkspace 时,「去处理」退化为只把窗口提到前台
- *   7. 提问 / 计划评审同样提醒,并带上会话 id
- *   8. 任务完成的一跳提示(默认关闭)
- *   9. 设置归一化(旧版 notify 字段被丢弃,inAppToast 保留)
- *  10. 卸载后不再有任何定时器继续响
- *  11. 测试按钮与调试句柄
- *  12. 没有 sessionStatus 时退回到 approval/request 责任链
+ *   2. 窗口在后台 → 提示音 + 右下角浮层 + 系统通知(标题/正文/tag/silent)
+ *   3. 窗口在前台 → 只有提示音 + 浮层
+ *   4. 关掉「窗口在后台时弹系统通知」后不再弹
+ *   5. 通知权限未授权时安静降级,手势授权后恢复
+ *   6. 点系统通知切到审批所属会话
+ *   7. 同一请求不重复提醒;请求被回答后收起
+ *   8. 重复提醒(间隔到点再响一次,后台通知也跟着重复)
+ *   9. 「去处理」跳到审批所属会话(uiWorkspace.openSession / sessions.open 兜底 / 降级)
+ *  10. 提问 / 计划评审同样提醒,并带上会话 id
+ *  11. 任务完成的一跳提示(默认关闭)
+ *  12. 设置归一化(旧版 notify 字段被丢弃,后台通知默认开)
+ *  13. 卸载后不再有任何定时器继续响
+ *  14. 测试按钮与调试句柄
+ *  15. 没有 sessionStatus 时退回到 approval/request 责任链
  *
  * 运行:`node test/smoke.mjs`(依赖 devDependencies 里的 react / react-dom)
  */
@@ -55,6 +58,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 function createEnv(options) {
   const records = {
     notifications: [],
+    notes: [],
+    permissionRequests: 0,
     oscillationStarts: [],
     styleTags: [],
     focusRequests: 0,
@@ -113,26 +118,42 @@ function createEnv(options) {
     }
   }
 
-  /** 插件不应该再走系统通知;谁 new 了它就等于把功能加回来了。 */
-  class ForbiddenNotification {
+  /**
+   * 记录型的 Notification 替身:能观察 title / body / tag / silent,也能手动点它。
+   * 权限默认 granted,可用 options.permission 改成 default / denied。
+   */
+  class FakeNotification {
     constructor(title, options) {
-      records.notifications.push({ title, options })
-      throw new Error('dsh-approval-alert must not create system notifications any more')
+      this.title = title
+      this.options = options || {}
+      this.onclick = null
+      this.closed = false
+      this.permission = FakeNotification.permission
+      records.notifications.push(this)
+      records.notes.push(this)
+    }
+    close() {
+      this.closed = true
     }
     static requestPermission() {
-      records.notifications.push({ request: true })
-      return Promise.resolve('granted')
+      records.permissionRequests += 1
+      if (FakeNotification.permission === 'default') FakeNotification.permission = 'granted'
+      return Promise.resolve(FakeNotification.permission)
     }
   }
-  ForbiddenNotification.permission = 'granted'
+  FakeNotification.permission = options.permission || 'granted'
 
   const storage = new Map()
   if (options.settings !== undefined) {
     storage.set('dsh-approval-alert:settings:v1', JSON.stringify(options.settings))
   }
 
+  let focused = options.focused !== false
+
   const document = {
-    visibilityState: 'visible',
+    get visibilityState() {
+      return focused ? 'visible' : 'hidden'
+    },
     head: { appendChild: (tag) => records.styleTags.push(tag) },
     body: { appendChild() {} },
     documentElement: { appendChild() {} },
@@ -146,7 +167,7 @@ function createEnv(options) {
     addEventListener() {},
     removeEventListener() {},
     hasFocus() {
-      return true
+      return focused
     },
     activeElement: null,
   }
@@ -163,7 +184,7 @@ function createEnv(options) {
     },
     AudioContext: FakeAudioContext,
     Audio: FakeAudio,
-    Notification: ForbiddenNotification,
+    Notification: FakeNotification,
     navigator: { language: 'zh-CN', languages: ['zh-CN'] },
     focus() {
       records.focusRequests += 1
@@ -183,6 +204,15 @@ function createEnv(options) {
     records,
     window: win,
     storage,
+    setFocused(value) {
+      focused = value === true
+    },
+    permission() {
+      return FakeNotification.permission
+    },
+    grantPermission() {
+      FakeNotification.permission = 'granted'
+    },
   }
 }
 
@@ -356,19 +386,25 @@ scenario('模块形状与槽位注册', async () => {
   }
 })
 
-scenario('审批出现:只响提示音 + 右下角浮层(不弹系统通知)', async () => {
-  const api = loadPlugin()
+scenario('窗口在后台:提示音 + 浮层 + 系统通知', async () => {
+  const api = loadPlugin({ focused: false })
   try {
     api.setStatus(statusPending(approval()))
     ok(api.env.records.oscillationStarts.length > 0, 'played a synthesized alert sound')
-    eq(api.env.records.notifications.length, 0, 'never creates a system notification (DSH does that itself)')
+
+    eq(api.env.records.notifications.length, 1, 'created exactly one system notification')
+    const note = api.env.records.notes[0]
+    eq(note.title, '需要你的审批 · DSH', 'notification title')
+    eq(note.options.body, '需要写入工作区以外的文件', 'notification body carries the approval reason')
+    eq(note.options.tag, 'dsh-approval-alert', 'notification tag identifies this plugin')
+    eq(note.options.silent, true, 'notification is silent; the plugin plays its own sound')
 
     const snapshot = api.snapshot()
     eq(snapshot.alerts.length, 1, 'snapshot exposes one pending alert')
     eq(snapshot.alerts[0].kind, 'approval', 'pending alert kind')
     eq(snapshot.alerts[0].sessionId, 'session-1', 'pending alert remembers its session')
     ok(!!snapshot.toast, 'snapshot exposes a toast')
-    ok(!('permission' in snapshot), 'snapshot no longer tracks notification permission')
+    eq(snapshot.permission, 'granted', 'snapshot reports the notification permission')
 
     const markup = renderOverlay(api)
     ok(markup.indexOf('需要你的审批') >= 0, 'in-app toast renders the approval title')
@@ -386,15 +422,76 @@ scenario('审批出现:只响提示音 + 右下角浮层(不弹系统通知)', a
   }
 })
 
+scenario('窗口在前台:只响声音 + 浮层,不打扰系统通知', async () => {
+  const api = loadPlugin({ focused: true })
+  try {
+    api.setStatus(statusPending(approval()))
+    ok(api.env.records.oscillationStarts.length > 0, 'still rings')
+    eq(api.env.records.notifications.length, 0, 'no system notification while the window is focused')
+    ok(!!api.snapshot().toast, 'in-app toast still shows')
+  } finally {
+    api.restoreGlobals()
+  }
+})
+
+scenario('关掉「窗口在后台时弹系统通知」', async () => {
+  const api = loadPlugin({ focused: false, settings: { notify: { backgroundNotification: false } } })
+  try {
+    api.setStatus(statusPending(approval()))
+    ok(api.env.records.oscillationStarts.length > 0, 'sound is unaffected by the toggle')
+    eq(api.env.records.notifications.length, 0, 'no system notification when the toggle is off')
+  } finally {
+    api.restoreGlobals()
+  }
+})
+
+scenario('通知权限未授权时安静降级,授权后恢复', async () => {
+  const api = loadPlugin({ focused: false, permission: 'default' })
+  try {
+    api.setStatus(statusPending(approval()))
+    eq(api.env.records.notifications.length, 0, 'no notification before the permission is granted')
+
+    // 用户点一下页面 = 手势 → 插件申请一次权限;自检提醒本身也会补发一条通知
+    api.handle().testAlert('approval')
+    eq(api.env.records.permissionRequests, 1, 'asked for the permission on a user gesture')
+    eq(api.env.records.notifications.length, 1, 'the self-test notifies once the permission is granted')
+
+    api.setStatus(statusIdle())
+    api.setStatus(statusPending(approval({ key: 'approval:2' })))
+    eq(api.env.records.notifications.length, 2, 'real approvals notify again after the permission is granted')
+  } finally {
+    api.restoreGlobals()
+  }
+})
+
+scenario('点系统通知切到审批所属会话', async () => {
+  const opened = []
+  const api = loadPlugin({ focused: false, workspace: { openSession: (id) => opened.push(id) } })
+  try {
+    api.setStatus(statusPending(approval(), 'session-z'))
+    const note = api.env.records.notes[0]
+    ok(!!note && typeof note.onclick === 'function', 'notification has a click handler')
+
+    note.onclick()
+
+    eq(opened.join(','), 'session-z', 'jumped to the waiting session')
+    ok(api.env.records.focusRequests >= 1, 'window raised as well')
+    ok(note.closed === true, 'notification closed after the click')
+  } finally {
+    api.restoreGlobals()
+  }
+})
+
 scenario('同一请求不重复提醒,回答后收起', async () => {
-  const api = loadPlugin()
+  const api = loadPlugin({ focused: false })
   try {
     api.setStatus(statusPending(approval({ key: 'approval:7' })))
     const sounds = api.env.records.oscillationStarts.length
+    const notes = api.env.records.notifications.length
 
     api.setStatus(statusPending(approval({ key: 'approval:7' })))
     eq(api.env.records.oscillationStarts.length, sounds, 'unchanged snapshot does not re-ring')
-    eq(api.env.records.notifications.length, 0, 'still no system notification')
+    eq(api.env.records.notifications.length, notes, 'and does not re-notify')
 
     api.setStatus(statusIdle())
     eq(api.snapshot().alerts.length, 0, 'alert removed once answered')
@@ -408,14 +505,17 @@ scenario('同一请求不重复提醒,回答后收起', async () => {
 
 scenario('重复提醒:间隔到点再响一次', async () => {
   const api = loadPlugin({
+    focused: false,
     settings: { events: { approval: { enabled: true, sound: 'preset:double', volume: 0.9, repeat: 2, intervalSec: 3 } } },
   })
   try {
     api.setStatus(statusPending(approval({ key: 'approval:repeat' })))
     const first = api.env.records.oscillationStarts.length
+    const firstNotes = api.env.records.notifications.length
     ok(first >= 2, 'double preset plays two notes on the first ring')
     await sleep(3400)
     ok(api.env.records.oscillationStarts.length > first, 'second ring happened after the interval')
+    ok(api.env.records.notifications.length > firstNotes, 'and the background notification was repeated too')
 
     api.setStatus(statusIdle())
     const settled = api.env.records.oscillationStarts.length
@@ -526,7 +626,7 @@ scenario('任务完成的一跳提示(默认关闭)', async () => {
   }
 })
 
-scenario('设置归一化:旧版 notify 字段被丢弃', async () => {
+scenario('设置归一化:旧版 notify 字段被丢弃,后台通知保留', async () => {
   const api = loadPlugin({
     settings: {
       enabled: true,
@@ -547,6 +647,7 @@ scenario('设置归一化:旧版 notify 字段被丢弃', async () => {
     eq(settings.events.approval.sound, 'preset:chime', 'unknown preset falls back to chime')
     eq(settings.events.completion.enabled, false, 'completion stays opt-in')
     eq(settings.notify.inAppToast, false, 'inAppToast survives normalization')
+    eq(settings.notify.backgroundNotification, true, 'background notification defaults to on')
     ok(!('whenUnfocused' in settings.notify), 'legacy whenUnfocused is dropped')
     ok(!('whenFocused' in settings.notify), 'legacy whenFocused is dropped')
     ok(!('systemSound' in settings.notify), 'legacy systemSound is dropped')
@@ -557,8 +658,9 @@ scenario('设置归一化:旧版 notify 字段被丢弃', async () => {
     const page = renderConfigPage(api)
     ok(page.indexOf('审批提醒') >= 0, 'config page renders approval section')
     ok(page.indexOf('清脆叮咚') >= 0, 'config page lists preset sounds')
-    ok(page.indexOf('右下角浮层') >= 0, 'config page still offers the in-app toast switch')
-    ok(page.indexOf('系统通知权限') < 0, 'config page no longer talks about notification permission')
+    ok(page.indexOf('右下角浮层') >= 0, 'config page offers the in-app toast switch')
+    ok(page.indexOf('窗口在后台时弹系统通知') >= 0, 'config page offers the background notification switch')
+    ok(page.indexOf('系统通知权限') >= 0, 'config page reports the notification permission')
     eq(renderConfigPage(api, { view: 'summary' }), '', 'summary view renders nothing')
   } finally {
     api.restoreGlobals()
@@ -599,7 +701,9 @@ scenario('测试按钮与调试句柄', async () => {
     const described = handle.describe()
     eq(described.pending.length, 1, 'describe() lists the pending alert')
     ok(Array.isArray(described.sessions), 'describe() lists the sessions being waited on')
-    eq(api.env.records.notifications.length, 0, 'self-test does not touch the system notification API')
+    eq(described.focused, true, 'describe() reports the window focus')
+    eq(described.permission, 'granted', 'describe() reports the notification permission')
+    eq(api.env.records.permissionRequests, 1, 'self-test asks for the notification permission once')
 
     // 自检提醒会自己过期,不会一直挂在浮层里
     await sleep(12500)
