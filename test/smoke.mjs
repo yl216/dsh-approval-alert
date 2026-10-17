@@ -385,8 +385,16 @@ scenario('焦点不在 DSH:提示音 + 系统通知 + 浮层', async () => {
     const markup = renderOverlay(api)
     ok(markup.indexOf('需要你的审批') >= 0, 'in-app toast renders the approval title')
     ok(markup.indexOf('去处理') >= 0, 'in-app toast renders the action button')
-    ok(markup.indexOf('daa-dock') >= 0, 'dock bell renders')
-    ok(markup.indexOf('daa-badge') >= 0, 'dock shows a pending badge')
+    ok(markup.indexOf('>设置<') >= 0, 'in-app toast offers a settings button')
+    ok(markup.indexOf('daa-dock') < 0, 'no permanent floating dock is rendered')
+    ok(markup.indexOf('daa-badge') < 0, 'no badge on a dock (there is no dock)')
+
+    const css = api.env.records.styleTags[0].textContent
+    ok(css.indexOf('right:16px;bottom:16px') >= 0, 'toast sits at the very bottom-right corner')
+    ok(css.indexOf('--dsw-alias-state-warn') < 0, 'no orange (warn) theme token is used anywhere')
+    ok(css.indexOf('--daa-accent:#4d8dff') >= 0, 'light-blue accent is defined')
+    ok(css.indexOf('bottom:96px') < 0, 'the old lifted offset is gone')
+    ok(css.indexOf('.daa-dock') < 0, 'dock styles are gone')
   } finally {
     api.restoreGlobals()
   }
@@ -408,7 +416,6 @@ scenario('同一请求不重复提醒,回答后收起', async () => {
     eq(api.snapshot().toast, null, 'toast cleared once answered')
     const markup = renderOverlay(api)
     ok(markup.indexOf('需要你的审批') < 0, 'toast gone from markup')
-    ok(markup.indexOf('daa-badge') < 0, 'badge gone from markup')
   } finally {
     api.restoreGlobals()
   }

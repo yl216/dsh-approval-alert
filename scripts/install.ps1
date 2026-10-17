@@ -246,7 +246,7 @@ $installed = Test-Path -LiteralPath (Join-Path $linkPath 'package.json')
 if ($Uninstall) {
   if ($finalBundles -notcontains $PackageName -and -not $installed) {
     Write-Done '卸载完成'
-    Write-Host '   · 重启 DeepSeek Harness 后,提醒功能与左下角小铃铛会消失。'
+    Write-Host '   · 重启 DeepSeek Harness 后,提醒声音与右下角浮层会消失。'
   }
   else {
     Write-Warn2 '看起来还有残留,请检查 profile 清单与 node_modules 联接。'
@@ -262,7 +262,7 @@ Write-Done 'profile 清单与联接都正确'
 Write-Host ''
 Write-Host '下一步:' -ForegroundColor Cyan
 Write-Host '   1) 完全退出并重新启动 DeepSeek Harness(仅刷新页面不够);'
-Write-Host '   2) 启动后左下角会出现一个小铃铛,点它就能配置提示音与通知;'
+Write-Host '   2) 启动后 DSH 需要你审批时,屏幕右下角会出现提示浮层,浮层里的「设置」可配置提示音与通知;'
 Write-Host '   3) 也可以在「设置 → 插件」里找到本插件那一页。'
 Write-Host ''
 Write-Host '验证小技巧:在开发者工具控制台执行 __dshApprovalAlert.testAlert() 可立即试听。'
