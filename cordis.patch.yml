@@ -1,0 +1,17 @@
+# ============================================================================
+# dsh-approval-alert —— DSH bundle patch
+# ============================================================================
+# 插件的“挂载声明”。DSH 启动时按 profile 的 bundle 层栈叠加各插件 patch,
+# 本文件把插件插入 profile 的配置树:Host 侧挂一个空插件(它只负责让浏览器
+# 侧 bundle 进入加载图),提醒逻辑全部在 lib/client.js 里。
+#
+# 安装(推荐,自动改 profile/建链接并重启说明):
+#   pwsh -File scripts/install.ps1
+# 或手工:
+#   dsh plugin --profile desktop add link:<本目录绝对路径>
+#   # 再把 "dsh-approval-alert" 加进 profile package.json 的 dsh.profile.bundles
+# ============================================================================
+
+- insert:
+    - id: dsh-approval-alert
+      name: dsh-approval-alert

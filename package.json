@@ -1,0 +1,47 @@
+{
+  "name": "dsh-approval-alert",
+  "version": "0.1.0",
+  "description": "DSH 审批/提问提醒:DSH 有焦点时只响提示音,焦点不在 DSH 时额外在屏幕右下角弹出系统通知;声音类别、音量、重复次数与自定义音效均可配置 · Per-approval reminder for DeepSeek Harness with customizable sound and an out-of-focus system notification.",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "approval",
+    "notification",
+    "sound",
+    "alert",
+    "cui"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml",
+    "README.md",
+    "scripts",
+    "test"
+  ],
+  "devDependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "scripts": {
+    "test": "node test/smoke.mjs"
+  },
+  "license": "MIT"
+}
